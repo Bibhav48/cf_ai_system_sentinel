@@ -60,6 +60,46 @@
 			text-transform: uppercase;
 		}
 
+		.submission-link {
+			color: var(--fg);
+			text-decoration: none;
+			font-size: 12px;
+			padding: 4px 8px;
+			border: 1px solid var(--border);
+			border-radius: 2px;
+			transition: all 0.3s ease;
+		}
+
+		.submission-link:hover {
+			color: var(--accent);
+			border-color: var(--accent);
+			background: rgba(0, 255, 136, 0.1);
+		}
+
+		.markdown-content p {
+			margin: 0 0 8px;
+		}
+
+		.markdown-content ol,
+		.markdown-content ul {
+			margin: 0 0 8px 18px;
+			padding: 0;
+		}
+
+		.markdown-content li {
+			margin: 0 0 4px;
+		}
+
+		.markdown-content strong {
+			color: #f0f0f0;
+		}
+
+		.markdown-content code {
+			background: rgba(255, 255, 255, 0.08);
+			padding: 1px 3px;
+			border-radius: 2px;
+		}
+
 		.status {
 			display: flex;
 			gap: 20px;
@@ -423,8 +463,8 @@
 						<span style="color: var(--accent);">ANALYSIS RESULT</span>
 						<span class="incident-severity ${incident.severity}">${incident.severity.toUpperCase()}</span>
 					</div>
-					<div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border: 1px solid var(--border); white-space: pre-wrap; word-wrap: break-word; font-size: 11px; line-height: 1.5;">
-${escapeHtml(incident.analysis)}
+					<div class="markdown-content" style="background: rgba(0, 0, 0, 0.3); padding: 10px; border: 1px solid var(--border); word-wrap: break-word; font-size: 11px; line-height: 1.5;">
+${renderMarkdown(incident.analysis)}
 					</div>
 				</div>
 			`;
@@ -466,7 +506,7 @@ ${escapeHtml(incident.analysis)}
 						<span class="incident-timestamp">${new Date(incident.timestamp).toLocaleTimeString()}</span>
 						<span class="incident-severity ${incident.severity}">${incident.severity.toUpperCase()}</span>
 					</div>
-					<div class="incident-preview">${escapeHtml(incident.analysis.substring(0, 100))}...</div>
+					<div class="incident-preview">${escapeHtml(markdownToText(incident.analysis).substring(0, 100))}...</div>
 				</div>
 			`
 				)
@@ -520,6 +560,87 @@ ${escapeHtml(incident.analysis)}
 				"'": "&#039;",
 			};
 			return text.replace(/[&<>"']/g, (m) => map[m] || m);
+		}
+
+		function formatInlineMarkdown(text) {
+			return text
+				.replace(/`([^`]+)`/g, "<code>$1</code>")
+				.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+				.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+		}
+
+		function renderMarkdown(markdown) {
+			const safe = escapeHtml(markdown || "");
+			const lines = safe.split(/\r?\n/);
+			const html = [];
+			let inOl = false;
+			let inUl = false;
+
+			function closeLists() {
+				if (inOl) {
+					html.push("</ol>");
+					inOl = false;
+				}
+				if (inUl) {
+					html.push("</ul>");
+					inUl = false;
+				}
+			}
+
+			for (const rawLine of lines) {
+				const line = rawLine.trim();
+
+				if (!line) {
+					closeLists();
+					continue;
+				}
+
+				const ordered = line.match(/^(\d+)\.\s+(.+)$/);
+				if (ordered) {
+					if (inUl) {
+						html.push("</ul>");
+						inUl = false;
+					}
+					if (!inOl) {
+						html.push("<ol>");
+						inOl = true;
+					}
+					html.push(`<li>${formatInlineMarkdown(ordered[2])}</li>`);
+					continue;
+				}
+
+				const unordered = line.match(/^[-*]\s+(.+)$/);
+				if (unordered) {
+					if (inOl) {
+						html.push("</ol>");
+						inOl = false;
+					}
+					if (!inUl) {
+						html.push("<ul>");
+						inUl = true;
+					}
+					html.push(`<li>${formatInlineMarkdown(unordered[1])}</li>`);
+					continue;
+				}
+
+				closeLists();
+				html.push(`<p>${formatInlineMarkdown(line)}</p>`);
+			}
+
+			closeLists();
+			return html.join("") || "<p>No analysis generated.</p>";
+		}
+
+		function markdownToText(markdown) {
+			return (markdown || "")
+				.replace(/```[\s\S]*?```/g, " ")
+				.replace(/`([^`]+)`/g, "$1")
+				.replace(/\*\*([^*]+)\*\*/g, "$1")
+				.replace(/\*([^*]+)\*/g, "$1")
+				.replace(/^\s*[-*]\s+/gm, "")
+				.replace(/^\s*\d+\.\s+/gm, "")
+				.replace(/\s+/g, " ")
+				.trim();
 		}
 
 		// Event listeners
