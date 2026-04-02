@@ -1,20 +1,547 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Hello, World!</title>
-	</head>
-	<body>
-		<h1 id="heading"></h1>
-		<p>This page comes from a static asset stored at `public/index.html` as configured in `wrangler.jsonc`.</p>
-		<script>
-			fetch('/message')
-				.then((resp) => resp.text())
-				.then((text) => {
-					const h1 = document.getElementById('heading');
-					h1.textContent = text;
+
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>System Sentinel - AI Log Analysis</title>
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+
+		:root {
+			--bg: #0a0e27;
+			--fg: #e0e0e0;
+			--accent: #00ff88;
+			--critical: #ff3333;
+			--high: #ff9900;
+			--medium: #ffff00;
+			--low: #00ccff;
+			--border: #333366;
+		}
+
+		body {
+			background-color: var(--bg);
+			color: var(--fg);
+			font-family: "Courier New", monospace;
+			font-size: 13px;
+			line-height: 1.6;
+			overflow: hidden;
+		}
+
+		.container {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			grid-template-rows: auto 1fr;
+			height: 100vh;
+			gap: 1px;
+			background: var(--border);
+			padding: 1px;
+		}
+
+		header {
+			grid-column: 1 / -1;
+			background: var(--bg);
+			border-bottom: 2px solid var(--accent);
+			padding: 12px 20px;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+
+		header h1 {
+			color: var(--accent);
+			font-size: 18px;
+			font-weight: bold;
+			letter-spacing: 2px;
+			text-transform: uppercase;
+		}
+
+		.status {
+			display: flex;
+			gap: 20px;
+			font-size: 12px;
+		}
+
+		.status-item {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+		}
+
+		.status-badge {
+			width: 8px;
+			height: 8px;
+			border-radius: 2px;
+		}
+
+		.panel {
+			background: var(--bg);
+			border: 1px solid var(--border);
+			border-radius: 0;
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+		}
+
+		.panel-title {
+			background: rgba(0, 255, 136, 0.1);
+			border-bottom: 1px solid var(--accent);
+			padding: 8px 12px;
+			color: var(--accent);
+			font-weight: bold;
+			font-size: 12px;
+			text-transform: uppercase;
+			letter-spacing: 1px;
+		}
+
+		.panel-content {
+			flex: 1;
+			overflow-y: auto;
+			padding: 12px;
+		}
+
+		textarea {
+			width: 100%;
+			height: 100%;
+			background: rgba(0, 0, 0, 0.3);
+			border: 1px solid var(--border);
+			color: var(--fg);
+			font-family: "Courier New", monospace;
+			font-size: 12px;
+			padding: 10px;
+			resize: none;
+		}
+
+		textarea::placeholder {
+			color: rgba(224, 224, 224, 0.4);
+		}
+
+		textarea:focus {
+			outline: none;
+			border-color: var(--accent);
+			background: rgba(0, 255, 136, 0.02);
+		}
+
+		.controls {
+			display: flex;
+			gap: 8px;
+			padding: 12px;
+			border-top: 1px solid var(--border);
+			background: rgba(0, 0, 0, 0.2);
+		}
+
+		button {
+			flex: 1;
+			padding: 8px 16px;
+			background: var(--accent);
+			color: var(--bg);
+			border: none;
+			font-family: "Courier New", monospace;
+			font-size: 12px;
+			font-weight: bold;
+			cursor: pointer;
+			text-transform: uppercase;
+			letter-spacing: 1px;
+			transition: all 0.2s;
+			border-radius: 0;
+		}
+
+		button:hover:not(:disabled) {
+			background: rgba(0, 255, 136, 0.8);
+			box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+		}
+
+		button:disabled {
+			opacity: 0.5;
+			cursor: not-allowed;
+		}
+
+		.analysis-output {
+			background: rgba(0, 0, 0, 0.3);
+			border: 1px solid var(--border);
+			padding: 12px;
+			border-radius: 0;
+			margin-bottom: 12px;
+			display: none;
+		}
+
+		.analysis-output.active {
+			display: block;
+		}
+
+		.analysis-output.loading {
+			color: var(--low);
+		}
+
+		.incident {
+			background: rgba(0, 0, 0, 0.4);
+			border-left: 3px solid var(--border);
+			padding: 8px;
+			margin-bottom: 8px;
+			border-radius: 0;
+			font-size: 11px;
+		}
+
+		.incident.critical {
+			border-left-color: var(--critical);
+		}
+
+		.incident.high {
+			border-left-color: var(--high);
+		}
+
+		.incident.medium {
+			border-left-color: var(--medium);
+		}
+
+		.incident.low {
+			border-left-color: var(--low);
+		}
+
+		.incident-header {
+			display: flex;
+			justify-content: space-between;
+			margin-bottom: 4px;
+		}
+
+		.incident-severity {
+			padding: 2px 6px;
+			border-radius: 0;
+			font-weight: bold;
+			font-size: 10px;
+		}
+
+		.incident-severity.critical {
+			background: rgba(255, 51, 51, 0.3);
+			color: var(--critical);
+		}
+
+		.incident-severity.high {
+			background: rgba(255, 153, 0, 0.3);
+			color: var(--high);
+		}
+
+		.incident-severity.medium {
+			background: rgba(255, 255, 0, 0.3);
+			color: var(--medium);
+		}
+
+		.incident-severity.low {
+			background: rgba(0, 204, 255, 0.3);
+			color: var(--low);
+		}
+
+		.incident-timestamp {
+			color: rgba(224, 224, 224, 0.6);
+			font-size: 10px;
+		}
+
+		.incident-preview {
+			color: rgba(224, 224, 224, 0.7);
+			max-height: 40px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.stats {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 8px;
+			margin-bottom: 12px;
+		}
+
+		.stat {
+			background: rgba(0, 0, 0, 0.3);
+			border: 1px solid var(--border);
+			padding: 8px;
+			text-align: center;
+			border-radius: 0;
+		}
+
+		.stat-label {
+			color: rgba(224, 224, 224, 0.6);
+			font-size: 10px;
+			text-transform: uppercase;
+			letter-spacing: 1px;
+		}
+
+		.stat-value {
+			color: var(--accent);
+			font-size: 20px;
+			font-weight: bold;
+			margin: 4px 0;
+		}
+
+		.error {
+			color: var(--critical);
+			background: rgba(255, 51, 51, 0.1);
+			padding: 8px;
+			border: 1px solid var(--critical);
+			border-radius: 0;
+		}
+
+		.empty-state {
+			color: rgba(224, 224, 224, 0.5);
+			text-align: center;
+			padding: 20px;
+		}
+
+		/* Scrollbar styling */
+		::-webkit-scrollbar {
+			width: 8px;
+		}
+
+		::-webkit-scrollbar-track {
+			background: rgba(0, 0, 0, 0.3);
+		}
+
+		::-webkit-scrollbar-thumb {
+			background: var(--accent);
+		}
+
+		::-webkit-scrollbar-thumb:hover {
+			background: rgba(0, 255, 136, 0.8);
+		}
+
+		.loading-spinner {
+			display: inline-block;
+			animation: spin 0.8s linear infinite;
+		}
+
+		@keyframes spin {
+			0% {
+				transform: rotate(0deg);
+			}
+
+			100% {
+				transform: rotate(360deg);
+			}
+		}
+	</style>
+</head>
+
+<body>
+	<div class="container">
+		<header>
+			<h1>⚡ System Sentinel</h1>
+			<div class="status">
+				<div class="status-item">
+					<div class="status-badge" style="background: var(--accent)"></div>
+					<span id="total-incidents">0 incidents</span>
+				</div>
+				<div class="status-item critical-count">
+					<div class="status-badge" style="background: var(--critical)"></div>
+					<span id="critical-count">0</span>
+				</div>
+			</div>
+		</header>
+
+		<div class="panel">
+			<div class="panel-title">📥 Log Input</div>
+			<textarea id="log-input"
+				placeholder="Paste raw system logs here (Nginx, Syslog, JSON, etc.)&#10;Example:&#10;[ERROR] 2026-04-02T10:23:45Z Connection timeout to db-primary&#10;[WARN] 2026-04-02T10:23:46Z Falling back to replica&#10;[PANIC] 2026-04-02T10:23:50Z Cache layer down&#10;..."></textarea>
+			<div class="controls">
+				<button id="analyze-btn">Analyze Logs</button>
+				<button id="clear-btn">Clear</button>
+			</div>
+		</div>
+
+		<div class="panel">
+			<div class="panel-title">🔍 Analysis Output</div>
+			<div class="panel-content">
+				<div class="analysis-output" id="analysis-output"></div>
+				<div id="incidents-feed"></div>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		const API_BASE = "";
+
+		const elements = {
+			logInput: document.getElementById("log-input"),
+			analyzeBtn: document.getElementById("analyze-btn"),
+			clearBtn: document.getElementById("clear-btn"),
+			analysisOutput: document.getElementById("analysis-output"),
+			incidentsFeed: document.getElementById("incidents-feed"),
+			totalIncidents: document.getElementById("total-incidents"),
+			criticalCount: document.getElementById("critical-count"),
+		};
+
+		let currentIncident = null;
+
+		/**
+		 * Analyze logs with AI
+		 */
+		async function analyzeLogs() {
+			const logs = elements.logInput.value.trim();
+
+			if (!logs) {
+				showError("Please paste logs first");
+				return;
+			}
+
+			elements.analyzeBtn.disabled = true;
+			showAnalysisLoad();
+
+			try {
+				const response = await fetch(`${API_BASE}/analyze`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ logs }),
 				});
-		</script>
-	</body>
+
+				if (!response.ok) {
+					const error = await response.json();
+					throw new Error(error.error || "Analysis failed");
+				}
+
+				const incident = await response.json();
+				currentIncident = incident;
+
+				displayAnalysis(incident);
+				await loadIncidents();
+				await loadSummary();
+			} catch (error) {
+				showError(String(error));
+			} finally {
+				elements.analyzeBtn.disabled = false;
+			}
+		}
+
+		/**
+		 * Display analysis result
+		 */
+		function displayAnalysis(incident) {
+			const html = `
+				<div style="margin-bottom: 12px;">
+					<div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+						<span style="color: var(--accent);">ANALYSIS RESULT</span>
+						<span class="incident-severity ${incident.severity}">${incident.severity.toUpperCase()}</span>
+					</div>
+					<div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border: 1px solid var(--border); white-space: pre-wrap; word-wrap: break-word; font-size: 11px; line-height: 1.5;">
+${escapeHtml(incident.analysis)}
+					</div>
+				</div>
+			`;
+
+			elements.analysisOutput.innerHTML = html;
+			elements.analysisOutput.classList.add("active");
+		}
+
+		/**
+		 * Load incident history
+		 */
+		async function loadIncidents() {
+			try {
+				const response = await fetch(`${API_BASE}/incidents?limit=20`);
+				if (!response.ok) throw new Error("Failed to load incidents");
+
+				const data = await response.json();
+				displayIncidents(data.incidents);
+			} catch (error) {
+				console.error(error);
+			}
+		}
+
+		/**
+		 * Display incidents in feed
+		 */
+		function displayIncidents(incidents) {
+			if (incidents.length === 0) {
+				elements.incidentsFeed.innerHTML =
+					'<div class="empty-state">No incidents yet. Analyze some logs!</div>';
+				return;
+			}
+
+			const html = incidents
+				.map(
+					(incident) => `
+				<div class="incident ${incident.severity}">
+					<div class="incident-header">
+						<span class="incident-timestamp">${new Date(incident.timestamp).toLocaleTimeString()}</span>
+						<span class="incident-severity ${incident.severity}">${incident.severity.toUpperCase()}</span>
+					</div>
+					<div class="incident-preview">${escapeHtml(incident.analysis.substring(0, 100))}...</div>
+				</div>
+			`
+				)
+				.join("");
+
+			elements.incidentsFeed.innerHTML = html;
+		}
+
+		/**
+		 * Load summary statistics
+		 */
+		async function loadSummary() {
+			try {
+				const response = await fetch(`${API_BASE}/summary`);
+				if (!response.ok) throw new Error("Failed to load summary");
+
+				const summary = await response.json();
+				elements.totalIncidents.textContent = `${summary.total} incident${summary.total !== 1 ? "s" : ""}`;
+				elements.criticalCount.textContent = summary.critical;
+			} catch (error) {
+				console.error(error);
+			}
+		}
+
+		/**
+		 * Show analysis loading state
+		 */
+		function showAnalysisLoad() {
+			elements.analysisOutput.innerHTML = `<div class="analysis-output loading"><span class="loading-spinner">⟳</span> Analyzing logs with Llama 3.3...</div>`;
+			elements.analysisOutput.classList.add("active");
+		}
+
+		/**
+		 * Show error message
+		 */
+		function showError(message) {
+			const html = `<div class="error">✗ ${escapeHtml(message)}</div>`;
+			elements.analysisOutput.innerHTML = html;
+			elements.analysisOutput.classList.add("active");
+		}
+
+		/**
+		 * Escape HTML to prevent XSS
+		 */
+		function escapeHtml(text) {
+			const map = {
+				"&": "&amp;",
+				"<": "&lt;",
+				">": "&gt;",
+				'"': "&quot;",
+				"'": "&#039;",
+			};
+			return text.replace(/[&<>"']/g, (m) => map[m] || m);
+		}
+
+		// Event listeners
+		elements.analyzeBtn.addEventListener("click", analyzeLogs);
+		elements.clearBtn.addEventListener("click", () => {
+			elements.logInput.value = "";
+			elements.analysisOutput.classList.remove("active");
+			elements.analysisOutput.innerHTML = "";
+			elements.incidentsFeed.innerHTML = "";
+		});
+
+		// Allow Ctrl+Enter to analyze
+		elements.logInput.addEventListener("keydown", (e) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+				analyzeLogs();
+			}
+		});
+
+		// Load initial data
+		loadSummary();
+		loadIncidents();
+	</script>
+</body>
+
 </html>
