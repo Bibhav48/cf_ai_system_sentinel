@@ -6,7 +6,7 @@
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_classes": ["SentinelState"],
+			"new_sqlite_classes": ["SentinelState"],
 		},
 	],
 	"assets": {
